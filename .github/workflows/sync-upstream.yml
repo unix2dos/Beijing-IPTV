@@ -1,0 +1,47 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # 每6小时检查一次
+  workflow_dispatch: # 也可手动触发
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add upstream
+        run: git remote add upstream https://github.com/qwerttvv/Beijing-IPTV.git
+
+      - name: Fetch upstream
+        run: git fetch upstream master
+
+      - name: Check for changes
+        id: check
+        run: |
+          LOCAL=$(git rev-parse HEAD)
+          UPSTREAM=$(git rev-parse upstream/master)
+          if [ "$LOCAL" = "$UPSTREAM" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes detected"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Upstream has new commits"
+          fi
+
+      - name: Sync upstream changes
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 直接 reset 到上游最新
+          git reset --hard upstream/master
+          # 重新应用自定义 IP 替换
+          sed -i 's|http://192.168.123.1:23234|http://192.168.6.1:4022|g' IPTV-Mobile.m3u
+          git add IPTV-Mobile.m3u
+          # 仅在有实际差异时才 commit
+          git diff --cached --quiet || git commit -m "chore: apply custom IP replacement"
+          git push --force-with-lease
